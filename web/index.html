@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>clicrontab</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>clicrontab</h1>
+    <div class="controls">
+      <button id="new-task-btn">New Task</button>
+      <button id="refresh-btn">Refresh</button>
+    </div>
+  </header>
+  <main>
+    <section>
+      <table id="tasks-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Command</th>
+            <th>Cron</th>
+            <th>Status</th>
+            <th>Last Run</th>
+            <th>Next Run</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+        </tbody>
+      </table>
+    </section>
+  </main>
+  <div id="modal-backdrop" class="hidden"></div>
+  <div id="task-modal" class="modal hidden"></div>
+  <div id="log-modal" class="modal hidden"></div>
+  <script src="/assets/app.js" type="module"></script>
+</body>
+</html>

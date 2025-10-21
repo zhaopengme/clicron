@@ -1,0 +1,106 @@
+openapi: 3.0.3
+info:
+  title: clicrontab API
+  version: 1.0.0
+servers:
+  - url: http://127.0.0.1:7070
+paths:
+  /v1/tasks:
+    get:
+      summary: List tasks
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Create task
+      responses:
+        '201':
+          description: Created
+  /v1/tasks/{taskID}:
+    get:
+      summary: Get task
+      parameters:
+        - in: path
+          name: taskID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+    patch:
+      summary: Update task
+      parameters:
+        - in: path
+          name: taskID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+    delete:
+      summary: Delete task
+      parameters:
+        - in: path
+          name: taskID
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: No Content
+  /v1/tasks/{taskID}/run:
+    post:
+      summary: Run task immediately
+      parameters:
+        - in: path
+          name: taskID
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Accepted
+  /v1/tasks/{taskID}/runs:
+    get:
+      summary: List runs for task
+      parameters:
+        - in: path
+          name: taskID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /v1/runs/{runID}:
+    get:
+      summary: Get run
+      parameters:
+        - in: path
+          name: runID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /v1/runs/{runID}/log:
+    get:
+      summary: Get run log
+      parameters:
+        - in: path
+          name: runID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /v1/cron/preview:
+    post:
+      summary: Preview cron expression
+      responses:
+        '200':
+          description: OK
