@@ -212,9 +212,27 @@ func (s *Scheduler) launchExecution(task *Task, run *Run) {
 	go func() {
 		defer s.markTaskRunning(task.ID, false)
 		ctx := s.ctxOrBackground()
+
 		if err := s.executor.Execute(ctx, task, run); err != nil {
 			s.logger.Error("execute task", "task_id", task.ID, "run_id", run.ID, "err", err)
+
+			// If execution failed due to context cancellation (e.g., system shutdown),
+			// try to save the run status using an independent context with a short timeout.
+			// This ensures the database state reflects that the run was canceled.
+			if errors.Is(err, context.Canceled) {
+				saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+
+				errMsg := "system shutdown"
+				if updateErr := s.store.UpdateRunStatus(saveCtx, run.ID, RunStatusCanceled, &errMsg); updateErr != nil {
+					s.logger.Error("failed to mark run as canceled during shutdown", "run_id", run.ID, "err", updateErr)
+				} else {
+					s.logger.Info("marked run as canceled due to system shutdown", "run_id", run.ID)
+				}
+			}
 		}
+
+		// Clean up old run logs (best effort, don't block on errors)
 		if err := s.store.PruneOldRunLogs(ctx, task.ID); err != nil {
 			s.logger.Warn("prune run logs", "task_id", task.ID, "err", err)
 		}

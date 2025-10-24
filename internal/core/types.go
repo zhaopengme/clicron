@@ -32,6 +32,7 @@ type Task struct {
 	Command        string
 	Cron           string
 	TimeoutSeconds *int
+	WorkingDir     *string
 	Status         TaskStatus
 	LastRunAt      *time.Time
 	NextRunAt      *time.Time

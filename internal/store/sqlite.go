@@ -29,10 +29,16 @@ func Open(ctx context.Context, stateDir string, logRetention int) (*Store, error
 		return nil, fmt.Errorf("ensure state dir: %w", err)
 	}
 	dbPath := filepath.Join(stateDir, "db.sqlite")
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("open sqlite: %w", err)
-	}
+    db, err := sql.Open("sqlite", dbPath)
+    if err != nil {
+        return nil, fmt.Errorf("open sqlite: %w", err)
+    }
+    // SQLite allows only one writer. Multiple pooled connections can cause
+    // frequent SQLITE_BUSY under concurrent schedules. Keep a single
+    // connection so WAL+busy_timeout are consistently applied and writes
+    // are serialized within the process.
+    db.SetMaxOpenConns(1)
+    db.SetMaxIdleConns(1)
 	timeout := int((3 * time.Second) / time.Millisecond)
 	if _, err := db.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout=%d;", timeout)); err != nil {
 		db.Close()
@@ -68,6 +74,7 @@ func runMigrations(ctx context.Context, db *sql.DB) error {
 	}
 	entries := []mig{
 		{Version: "0001_init", SQL: mustReadMigration("migrations/0001_init.sql")},
+		{Version: "0002_add_working_dir", SQL: mustReadMigration("migrations/0002_add_working_dir.sql")},
 	}
 	for _, entry := range entries {
 		applied, err := isMigrationApplied(ctx, db, entry.Version)

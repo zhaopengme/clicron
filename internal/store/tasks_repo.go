@@ -17,9 +17,9 @@ func (s *Store) InsertTask(ctx context.Context, task *core.Task) error {
 	task.CreatedAt = now
 	task.UpdatedAt = now
 	_, err := s.DB.ExecContext(ctx, `
-		INSERT INTO tasks (id, name, command, cron, timeout_seconds, status, last_run_at, next_run_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, task.ID, nullableString(task.Name), task.Command, task.Cron, nullableInt(task.TimeoutSeconds),
+		INSERT INTO tasks (id, name, command, cron, timeout_seconds, working_dir, status, last_run_at, next_run_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, task.ID, nullableString(task.Name), task.Command, task.Cron, nullableInt(task.TimeoutSeconds), nullableString(task.WorkingDir),
 		task.Status, nullableTime(task.LastRunAt), nullableTime(task.NextRunAt),
 		task.CreatedAt.Format(time.RFC3339Nano), task.UpdatedAt.Format(time.RFC3339Nano))
 	if err != nil {
@@ -32,9 +32,9 @@ func (s *Store) UpdateTask(ctx context.Context, task *core.Task) error {
 	task.UpdatedAt = time.Now().UTC()
 	res, err := s.DB.ExecContext(ctx, `
 		UPDATE tasks
-		SET name = ?, command = ?, cron = ?, timeout_seconds = ?, status = ?, last_run_at = ?, next_run_at = ?, updated_at = ?
+		SET name = ?, command = ?, cron = ?, timeout_seconds = ?, working_dir = ?, status = ?, last_run_at = ?, next_run_at = ?, updated_at = ?
 		WHERE id = ?
-	`, nullableString(task.Name), task.Command, task.Cron, nullableInt(task.TimeoutSeconds), task.Status,
+	`, nullableString(task.Name), task.Command, task.Cron, nullableInt(task.TimeoutSeconds), nullableString(task.WorkingDir), task.Status,
 		nullableTime(task.LastRunAt), nullableTime(task.NextRunAt), task.UpdatedAt.Format(time.RFC3339Nano), task.ID)
 	if err != nil {
 		return fmt.Errorf("update task: %w", err)
@@ -66,7 +66,7 @@ func (s *Store) DeleteTask(ctx context.Context, id string) error {
 
 func (s *Store) GetTask(ctx context.Context, id string) (*core.Task, error) {
 	row := s.DB.QueryRowContext(ctx, `
-		SELECT id, name, command, cron, timeout_seconds, status, last_run_at, next_run_at, created_at, updated_at
+		SELECT id, name, command, cron, timeout_seconds, working_dir, status, last_run_at, next_run_at, created_at, updated_at
 		FROM tasks WHERE id = ?
 	`, id)
 	task, err := scanTask(row)
@@ -84,14 +84,14 @@ func (s *Store) ListTasks(ctx context.Context, status *core.TaskStatus) ([]*core
 	var err error
 	if status != nil {
 		rows, err = s.DB.QueryContext(ctx, `
-			SELECT id, name, command, cron, timeout_seconds, status, last_run_at, next_run_at, created_at, updated_at
+			SELECT id, name, command, cron, timeout_seconds, working_dir, status, last_run_at, next_run_at, created_at, updated_at
 			FROM tasks
 			WHERE status = ?
 			ORDER BY created_at DESC
 		`, *status)
 	} else {
 		rows, err = s.DB.QueryContext(ctx, `
-			SELECT id, name, command, cron, timeout_seconds, status, last_run_at, next_run_at, created_at, updated_at
+			SELECT id, name, command, cron, timeout_seconds, working_dir, status, last_run_at, next_run_at, created_at, updated_at
 			FROM tasks
 			ORDER BY created_at DESC
 		`)
@@ -154,18 +154,19 @@ func scanTask(scanner interface {
 	Scan(dest ...any) error
 }) (*core.Task, error) {
 	var (
-		id        string
-		name      sql.NullString
-		command   string
-		cronExpr  string
-		timeout   sql.NullInt64
-		status    string
-		lastRun   sql.NullString
-		nextRun   sql.NullString
-		createdAt string
-		updatedAt string
+		id         string
+		name       sql.NullString
+		command    string
+		cronExpr   string
+		timeout    sql.NullInt64
+		workingDir sql.NullString
+		status     string
+		lastRun    sql.NullString
+		nextRun    sql.NullString
+		createdAt  string
+		updatedAt  string
 	)
-	if err := scanner.Scan(&id, &name, &command, &cronExpr, &timeout, &status, &lastRun, &nextRun, &createdAt, &updatedAt); err != nil {
+	if err := scanner.Scan(&id, &name, &command, &cronExpr, &timeout, &workingDir, &status, &lastRun, &nextRun, &createdAt, &updatedAt); err != nil {
 		return nil, fmt.Errorf("scan task: %w", err)
 	}
 	task := &core.Task{
@@ -180,6 +181,9 @@ func scanTask(scanner interface {
 	if timeout.Valid {
 		val := int(timeout.Int64)
 		task.TimeoutSeconds = &val
+	}
+	if workingDir.Valid {
+		task.WorkingDir = &workingDir.String
 	}
 	if lastRun.Valid {
 		if t, err := time.Parse(time.RFC3339Nano, lastRun.String); err == nil {

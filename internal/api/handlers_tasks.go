@@ -19,6 +19,7 @@ type createTaskRequest struct {
 	Command     string  `json:"command"`
 	Cron        string  `json:"cron"`
 	TimeoutSecs *int    `json:"timeout_s"`
+	WorkingDir  *string `json:"working_dir"`
 	Paused      bool    `json:"paused"`
 }
 
@@ -27,6 +28,7 @@ type updateTaskRequest struct {
 	Command     *string `json:"command"`
 	Cron        *string `json:"cron"`
 	TimeoutSecs *int    `json:"timeout_s"`
+	WorkingDir  *string `json:"working_dir"`
 	Paused      *bool   `json:"paused"`
 }
 
@@ -36,6 +38,7 @@ type taskResponse struct {
 	Command     string  `json:"command"`
 	Cron        string  `json:"cron"`
 	TimeoutSecs *int    `json:"timeout_s,omitempty"`
+	WorkingDir  *string `json:"working_dir,omitempty"`
 	Status      string  `json:"status"`
 	LastRunAt   *string `json:"last_run_at,omitempty"`
 	NextRunAt   *string `json:"next_run_at,omitempty"`
@@ -90,12 +93,21 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		timeoutPtr = &timeout
 	}
 
+	var workingDirPtr *string
+	if req.WorkingDir != nil {
+		trimmed := strings.TrimSpace(*req.WorkingDir)
+		if trimmed != "" {
+			workingDirPtr = &trimmed
+		}
+	}
+
 	task := &core.Task{
 		ID:             core.NewID(),
 		Name:           namePtr,
 		Command:        req.Command,
 		Cron:           req.Cron,
 		TimeoutSeconds: timeoutPtr,
+		WorkingDir:     workingDirPtr,
 		Status:         status,
 	}
 
@@ -219,6 +231,15 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		} else {
 			timeout := *req.TimeoutSecs
 			task.TimeoutSeconds = &timeout
+		}
+	}
+
+	if req.WorkingDir != nil {
+		trimmed := strings.TrimSpace(*req.WorkingDir)
+		if trimmed == "" {
+			task.WorkingDir = nil
+		} else {
+			task.WorkingDir = &trimmed
 		}
 	}
 
@@ -348,6 +369,7 @@ func taskToResponse(task *core.Task) taskResponse {
 		Command:     task.Command,
 		Cron:        task.Cron,
 		TimeoutSecs: task.TimeoutSeconds,
+		WorkingDir:  task.WorkingDir,
 		Status:      string(task.Status),
 		LastRunAt:   last,
 		NextRunAt:   next,
