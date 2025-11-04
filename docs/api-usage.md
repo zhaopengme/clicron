@@ -34,6 +34,7 @@
   "name": "Build Docs",
   "command": "bash -lc 'make docs'",
   "cron": "0 2 * * *",
+  "working_dir": "/path/to/project", 
   "timeout_s": 1800,
   "paused": false
 }
@@ -47,6 +48,7 @@
 | `command` | string，必填 | 运行命令，后台通过 `/bin/sh -c`（Windows 用 `cmd /C`）执行。 |
 | `cron` | string，必填 | 标准 5 字段 cron，允许 `* , - /`，不支持 `@daily` 等宏。 |
 | `timeout_s` | int，可选 | 秒数，>0 时启用超时；未提供或为 0 表示不限时。 |
+| `working_dir` | string，可选 | 命令运行的工作目录；省略或留空则使用服务进程的当前工作目录。 |
 | `paused` | bool，可选 | `true` 则创建后保持暂停。 |
 
 响应示例：
@@ -87,6 +89,7 @@ curl -s http://127.0.0.1:7070/v1/tasks?status=active | jq .
 {
   "cron": "0 */6 * * *",
   "timeout_s": 1200,
+  "working_dir": "/data/repo",
   "paused": false
 }
 ```

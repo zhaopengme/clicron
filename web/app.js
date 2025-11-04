@@ -35,6 +35,7 @@ function renderTasks() {
       <td>${escapeHtml(task.name || '')}</td>
       <td><code>${escapeHtml(task.command)}</code></td>
       <td>${escapeHtml(task.cron)}</td>
+      <td>${task.working_dir ? `<code>${escapeHtml(task.working_dir)}</code>` : ''}</td>
       <td>${renderStatus(task.status)}</td>
       <td>${formatDate(task.last_run_at)}</td>
       <td>${formatDate(task.next_run_at)}</td>
@@ -76,6 +77,8 @@ function openTaskForm(task = null) {
     <input type="text" name="cron" value="${escapeAttribute(task?.cron || '')}" required>
     <label>Timeout (seconds, 0 = no timeout)</label>
     <input type="number" name="timeout_s" min="0" value="${task?.timeout_s ?? 0}">
+    <label>Working Directory (optional)</label>
+    <input type="text" name="working_dir" placeholder="Defaults to server's current working directory" value="${escapeAttribute(task?.working_dir || '')}">
     <label><input type="checkbox" name="paused" ${task?.status === 'paused' ? 'checked' : ''}> Paused</label>
     <div class="cron-preview"></div>
     <div class="form-actions">
@@ -123,6 +126,7 @@ function openTaskForm(task = null) {
       command: formData.get('command')?.toString() || '',
       cron: formData.get('cron')?.toString() || '',
       timeout_s: Number(formData.get('timeout_s') || 0),
+      working_dir: formData.get('working_dir') ? formData.get('working_dir').toString() : undefined,
       paused: formData.get('paused') !== null,
     };
     if (!payload.command.trim() || !payload.cron.trim()) {
@@ -202,7 +206,8 @@ async function openRunsModal(task) {
 
     taskModal.innerHTML = '';
     const container = document.createElement('div');
-    container.innerHTML = `<h2>Runs for ${escapeHtml(task.name || task.command)}</h2>`;
+    const workDirText = task.working_dir ? `<code>${escapeHtml(task.working_dir)}</code>` : '(server cwd)';
+    container.innerHTML = `<h2>Runs for ${escapeHtml(task.name || task.command)}</h2><div class="task-meta">Work Dir: ${workDirText}</div>`;
     const table = document.createElement('table');
     table.innerHTML = `
       <thead>
