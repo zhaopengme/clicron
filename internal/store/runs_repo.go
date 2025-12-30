@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"clicrontab/internal/core"
@@ -216,4 +217,22 @@ func mustParseTime(value string) time.Time {
 		panic(fmt.Sprintf("invalid stored time %q: %v", value, err))
 	}
 	return t
+}
+
+// ReadRunLog reads the entire log file content.
+func (s *Store) ReadRunLog(logPath string) (string, error) {
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		return "", fmt.Errorf("read log file: %w", err)
+	}
+	return string(content), nil
+}
+
+// TailRunLog returns the last N lines from log content.
+func (s *Store) TailRunLog(content string, n int) (string, error) {
+	lines := strings.Split(content, "\n")
+	if len(lines) <= n {
+		return content, nil
+	}
+	return strings.Join(lines[len(lines)-n:], "\n"), nil
 }

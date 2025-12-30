@@ -16,6 +16,7 @@ type Config struct {
 	UseUTC        bool
 	RunLogKeep    int
 	ShutdownGrace time.Duration
+	Mode          string // http, mcp, or both
 }
 
 const (
@@ -23,6 +24,7 @@ const (
 	defaultLogLevel      = "info"
 	defaultRunLogKeep    = 20
 	defaultShutdownGrace = 5 * time.Second
+	defaultMode          = "http"
 )
 
 // Parse parses command line flags into Config.
@@ -34,6 +36,7 @@ func Parse() (*Config, error) {
 	flag.BoolVar(&cfg.UseUTC, "use-utc", false, "Use UTC for cron evaluation instead of system local time")
 	flag.IntVar(&cfg.RunLogKeep, "run-log-keep", defaultRunLogKeep, "Number of recent runs to retain per task")
 	flag.DurationVar(&cfg.ShutdownGrace, "shutdown-grace", defaultShutdownGrace, "Grace period when shutting down HTTP server and running jobs")
+	flag.StringVar(&cfg.Mode, "mode", defaultMode, "Run mode: http (HTTP server), mcp (MCP server via stdio), or both")
 	flag.Parse()
 
 	if cfg.StateDir == "" {

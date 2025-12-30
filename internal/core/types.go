@@ -29,7 +29,8 @@ const (
 type Task struct {
 	ID             string
 	Name           *string
-	Command        string
+	Prompt         string  // User-provided prompt for AI CLI tools (e.g., Claude)
+	Command        string  // Full command to execute (built from prompt or directly specified)
 	Cron           string
 	TimeoutSeconds *int
 	WorkingDir     *string

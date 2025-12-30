@@ -75,6 +75,7 @@ func runMigrations(ctx context.Context, db *sql.DB) error {
 	entries := []mig{
 		{Version: "0001_init", SQL: mustReadMigration("migrations/0001_init.sql")},
 		{Version: "0002_add_working_dir", SQL: mustReadMigration("migrations/0002_add_working_dir.sql")},
+		{Version: "0003_add_prompt", SQL: mustReadMigration("migrations/0003_add_prompt.sql")},
 	}
 	for _, entry := range entries {
 		applied, err := isMigrationApplied(ctx, db, entry.Version)
