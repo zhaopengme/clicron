@@ -2,56 +2,183 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"clicrontab/internal/core"
 	"clicrontab/internal/store"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 )
 
+// ToolHandler is the function signature for tool handlers.
+type ToolHandler func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error)
+
 // MCPServer represents the MCP server that handles protocol communication.
+// It implements a simple stateless JSON-RPC over HTTP server.
 type MCPServer struct {
 	store     *store.Store
 	scheduler *core.Scheduler
 	logger    *slog.Logger
 	location  *time.Location
+	tools     map[string]mcp.Tool
+	handlers  map[string]ToolHandler
 }
 
 // NewMCPServer creates a new MCP server instance.
-func NewMCPServer(store *store.Store, scheduler *core.Scheduler, logger *slog.Logger, location *time.Location) *MCPServer {
-	return &MCPServer{
+func NewMCPServer(store *store.Store, scheduler *core.Scheduler, logger *slog.Logger, location *time.Location, addr string) *MCPServer {
+	s := &MCPServer{
 		store:     store,
 		scheduler: scheduler,
 		logger:    logger,
 		location:  location,
+		tools:     make(map[string]mcp.Tool),
+		handlers:  make(map[string]ToolHandler),
+	}
+
+	// Register tools
+	s.registerTools()
+
+	return s
+}
+
+// ServeHTTP implements the http.Handler interface.
+// It handles JSON-RPC messages (POST).
+func (s *MCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Handle CORS
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if r.Method == http.MethodGet {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "ok",
+			"service": "clicrontab-mcp",
+			"version": "1.0.0",
+		})
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req mcp.JSONRPCRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeJSONRPCError(w, mcp.NewRequestId(nil), mcp.PARSE_ERROR, "Parse error")
+		return
+	}
+
+	s.logger.Debug("received mcp request", "method", req.Method, "id", req.ID)
+
+	var result any
+	var err error
+
+	switch req.Method {
+	case "initialize":
+		result = mcp.InitializeResult{
+			ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
+			ServerInfo: mcp.Implementation{
+				Name:    "clicrontab",
+				Version: "1.0.0",
+			},
+			Capabilities: mcp.ServerCapabilities{
+				Tools: &struct {
+					ListChanged bool `json:"listChanged,omitempty"`
+				}{
+					ListChanged: false,
+				},
+			},
+		}
+	case "notifications/initialized":
+		// No response needed for notifications
+		return
+	case "ping":
+		result = map[string]any{}
+	case "tools/list":
+		result = s.handleListTools(req)
+	case "tools/call":
+		result, err = s.handleCallTool(r.Context(), req)
+	default:
+		s.writeJSONRPCError(w, req.ID, mcp.METHOD_NOT_FOUND, fmt.Sprintf("Method not found: %s", req.Method))
+		return
+	}
+
+	if err != nil {
+		s.writeJSONRPCError(w, req.ID, mcp.INTERNAL_ERROR, err.Error())
+		return
+	}
+
+	response := mcp.JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      req.ID,
+		Result:  result,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		s.logger.Error("failed to encode response", "err", err)
 	}
 }
 
-// Run starts the MCP server using stdio transport.
-func (s *MCPServer) Run() error {
-	mcpServer := server.NewMCPServer(
-		"clicrontab",
-		"1.0.0",
-		server.WithToolCapabilities(true),
-	)
+func (s *MCPServer) handleListTools(req mcp.JSONRPCRequest) mcp.ListToolsResult {
+	tools := make([]mcp.Tool, 0, len(s.tools))
+	for _, tool := range s.tools {
+		tools = append(tools, tool)
+	}
+	return mcp.ListToolsResult{
+		Tools: tools,
+	}
+}
 
-	// Register all tools
-	s.registerTools(mcpServer)
+func (s *MCPServer) handleCallTool(ctx context.Context, req mcp.JSONRPCRequest) (*mcp.CallToolResult, error) {
+	var params mcp.CallToolRequest
+	// Convert params map to CallToolRequest structure
+	// We need to marshal and unmarshal because req.Params is json.RawMessage or map
+	paramsBytes, err := json.Marshal(req.Params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal params: %w", err)
+	}
+	if err := json.Unmarshal(paramsBytes, &params.Params); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal params: %w", err)
+	}
 
-	s.logger.Info("MCP server starting on stdio")
+	handler, ok := s.handlers[params.Params.Name]
+	if !ok {
+		return nil, fmt.Errorf("tool not found: %s", params.Params.Name)
+	}
 
-	// Start the stdio server
-	return server.ServeStdio(mcpServer)
+	return handler(ctx, params)
+}
+
+func (s *MCPServer) writeJSONRPCError(w http.ResponseWriter, id mcp.RequestId, code int, message string) {
+	response := mcp.NewJSONRPCError(id, code, message, nil)
+	w.Header().Set("Content-Type", "application/json")
+	// MCP errors should return 200 OK with error body for JSON-RPC
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
+// AddTool registers a tool with the server
+func (s *MCPServer) AddTool(tool mcp.Tool, handler ToolHandler) {
+	s.tools[tool.Name] = tool
+	s.handlers[tool.Name] = handler
 }
 
 // registerTools registers all available MCP tools.
-func (s *MCPServer) registerTools(mcpServer *server.MCPServer) {
+func (s *MCPServer) registerTools() {
 	// cron_create_task
-	mcpServer.AddTool(mcp.NewTool("cron_create_task",
+	s.AddTool(mcp.NewTool("cron_create_task",
 		mcp.WithDescription("创建一个定时执行 Claude 命令的任务。使用标准 5 字段 cron 表达式（分 时 日 月 周）"),
 		mcp.WithString("name",
 			mcp.Description("任务名称（可选）"),
@@ -75,7 +202,7 @@ func (s *MCPServer) registerTools(mcpServer *server.MCPServer) {
 	), s.handleCreateTask)
 
 	// cron_list_tasks
-	mcpServer.AddTool(mcp.NewTool("cron_list_tasks",
+	s.AddTool(mcp.NewTool("cron_list_tasks",
 		mcp.WithDescription("列出所有定时任务"),
 		mcp.WithString("status",
 			mcp.Description("过滤状态: active 或 paused"),
@@ -84,7 +211,7 @@ func (s *MCPServer) registerTools(mcpServer *server.MCPServer) {
 	), s.handleListTasks)
 
 	// cron_get_task
-	mcpServer.AddTool(mcp.NewTool("cron_get_task",
+	s.AddTool(mcp.NewTool("cron_get_task",
 		mcp.WithDescription("获取任务详情"),
 		mcp.WithString("task_id",
 			mcp.Required(),
@@ -93,7 +220,7 @@ func (s *MCPServer) registerTools(mcpServer *server.MCPServer) {
 	), s.handleGetTask)
 
 	// cron_update_task
-	mcpServer.AddTool(mcp.NewTool("cron_update_task",
+	s.AddTool(mcp.NewTool("cron_update_task",
 		mcp.WithDescription("更新任务配置"),
 		mcp.WithString("task_id",
 			mcp.Required(),
@@ -114,7 +241,7 @@ func (s *MCPServer) registerTools(mcpServer *server.MCPServer) {
 	), s.handleUpdateTask)
 
 	// cron_delete_task
-	mcpServer.AddTool(mcp.NewTool("cron_delete_task",
+	s.AddTool(mcp.NewTool("cron_delete_task",
 		mcp.WithDescription("删除任务"),
 		mcp.WithString("task_id",
 			mcp.Required(),
@@ -123,7 +250,7 @@ func (s *MCPServer) registerTools(mcpServer *server.MCPServer) {
 	), s.handleDeleteTask)
 
 	// cron_run_task
-	mcpServer.AddTool(mcp.NewTool("cron_run_task",
+	s.AddTool(mcp.NewTool("cron_run_task",
 		mcp.WithDescription("立即执行指定任务"),
 		mcp.WithString("task_id",
 			mcp.Required(),
@@ -135,7 +262,7 @@ func (s *MCPServer) registerTools(mcpServer *server.MCPServer) {
 	), s.handleRunTask)
 
 	// cron_list_runs
-	mcpServer.AddTool(mcp.NewTool("cron_list_runs",
+	s.AddTool(mcp.NewTool("cron_list_runs",
 		mcp.WithDescription("查看任务的运行历史"),
 		mcp.WithString("task_id",
 			mcp.Required(),
@@ -149,7 +276,7 @@ func (s *MCPServer) registerTools(mcpServer *server.MCPServer) {
 	), s.handleListRuns)
 
 	// cron_get_run_log
-	mcpServer.AddTool(mcp.NewTool("cron_get_run_log",
+	s.AddTool(mcp.NewTool("cron_get_run_log",
 		mcp.WithDescription("获取运行的日志输出"),
 		mcp.WithString("run_id",
 			mcp.Required(),
@@ -162,7 +289,7 @@ func (s *MCPServer) registerTools(mcpServer *server.MCPServer) {
 	), s.handleGetRunLog)
 
 	// cron_preview
-	mcpServer.AddTool(mcp.NewTool("cron_preview",
+	s.AddTool(mcp.NewTool("cron_preview",
 		mcp.WithDescription("预览 cron 表达式的未来触发时间"),
 		mcp.WithString("cron",
 			mcp.Required(),

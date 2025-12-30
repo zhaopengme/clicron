@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,8 +13,9 @@ import (
 	"clicrontab/internal/api"
 	"clicrontab/internal/config"
 	"clicrontab/internal/core"
-	clicrontabmcp "clicrontab/internal/mcp"
 	"clicrontab/internal/logging"
+	clicrontabmcp "clicrontab/internal/mcp"
+	"clicrontab/internal/notify"
 	"clicrontab/internal/store"
 )
 
@@ -40,7 +40,18 @@ func main() {
 		location = time.UTC
 	}
 
-	executor := core.NewCommandExecutor(storeInst, logger)
+	var notifier notify.Notifier = &notify.NoOpNotifier{}
+	if cfg.Notification.Bark.Enabled && cfg.Notification.Bark.URL != "" {
+		bark, err := notify.NewBarkNotifier(cfg.Notification.Bark.URL)
+		if err != nil {
+			logger.Error("init bark notifier", "err", err)
+		} else {
+			notifier = bark
+			logger.Info("bark notification enabled", "url", cfg.Notification.Bark.URL)
+		}
+	}
+
+	executor := core.NewCommandExecutor(storeInst, logger, notifier)
 	scheduler := core.NewScheduler(storeInst, executor, logger, location)
 
 	ctx, cancel := context.WithCancel(baseCtx)
@@ -51,23 +62,11 @@ func main() {
 		logger.Error("initial sync", "err", err)
 	}
 
-	// Run based on mode
-	switch cfg.Mode {
-	case "http", "":
-		runHTTPMode(cfg, storeInst, scheduler, logger, location, ctx, cancel)
-	case "mcp":
-		runMCPMode(storeInst, scheduler, logger, location, ctx, cancel)
-	case "both":
-		runBothMode(cfg, storeInst, scheduler, logger, location, ctx, cancel)
-	default:
-		logger.Error("invalid mode", "mode", cfg.Mode, "valid", []string{"http", "mcp", "both"})
-		os.Exit(1)
-	}
-}
+	// Initialize MCP server handler
+	mcpServer := clicrontabmcp.NewMCPServer(storeInst, scheduler, logger, location, cfg.Addr)
 
-// runHTTPMode starts only the HTTP server.
-func runHTTPMode(cfg *config.Config, store *store.Store, scheduler *core.Scheduler, logger *slog.Logger, location *time.Location, ctx context.Context, cancel context.CancelFunc) {
-	server, err := api.NewServer(cfg.Addr, store, scheduler, logger, location)
+	// Initialize HTTP server (mounts MCP handler at /mcp)
+	server, err := api.NewServer(cfg.Addr, cfg.AuthToken, storeInst, scheduler, mcpServer, logger, location)
 	if err != nil {
 		logger.Error("create server", "err", err)
 		os.Exit(1)
@@ -103,81 +102,6 @@ func runHTTPMode(cfg *config.Config, store *store.Store, scheduler *core.Schedul
 	case <-time.After(cfg.ShutdownGrace):
 		logger.Warn("scheduler stop timed out")
 	}
-}
 
-// runMCPMode starts only the MCP server.
-func runMCPMode(store *store.Store, scheduler *core.Scheduler, logger *slog.Logger, location *time.Location, ctx context.Context, cancel context.CancelFunc) {
-	// Create MCP server
-	mcpServer := clicrontabmcp.NewMCPServer(store, scheduler, logger, location)
-
-	// Handle shutdown
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		<-sigs
-		logger.Info("received signal, shutting down...")
-		cancel()
-	}()
-
-	// Run MCP server (blocking)
-	if err := mcpServer.Run(); err != nil {
-		logger.Error("mcp server error", "err", err)
-		os.Exit(1)
-	}
-}
-
-// runBothMode starts both HTTP and MCP servers.
-func runBothMode(cfg *config.Config, store *store.Store, scheduler *core.Scheduler, logger *slog.Logger, location *time.Location, ctx context.Context, cancel context.CancelFunc) {
-	// Start MCP server in background
-	mcpServer := clicrontabmcp.NewMCPServer(store, scheduler, logger, location)
-	mcpErr := make(chan error, 1)
-	go func() {
-		if err := mcpServer.Run(); err != nil {
-			mcpErr <- err
-		}
-	}()
-
-	// Start HTTP server
-	server, err := api.NewServer(cfg.Addr, store, scheduler, logger, location)
-	if err != nil {
-		logger.Error("create server", "err", err)
-		os.Exit(1)
-	}
-
-	serverErr := make(chan error, 1)
-	go func() {
-		if err := server.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverErr <- err
-		}
-	}()
-
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-
-	select {
-	case sig := <-sigs:
-		logger.Info("received signal", "signal", sig.String())
-	case err := <-serverErr:
-		logger.Error("server error", "err", err)
-	case err := <-mcpErr:
-		logger.Error("mcp server error", "err", err)
-	}
-
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownGrace)
-	defer shutdownCancel()
-
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		logger.Error("server shutdown", "err", err)
-	}
-
-	stopCtx := scheduler.Stop()
-	select {
-	case <-stopCtx.Done():
-	case <-time.After(cfg.ShutdownGrace):
-		logger.Warn("scheduler stop timed out")
-	}
-
-	// Note: MCP server will be terminated when the process exits
 	logger.Info("shutdown complete")
 }

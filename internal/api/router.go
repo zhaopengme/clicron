@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"clicrontab/internal/core"
+	clicrontabmcp "clicrontab/internal/mcp"
 	"clicrontab/internal/store"
 	"clicrontab/web"
 
@@ -23,12 +24,14 @@ type Server struct {
 	router     *chi.Mux
 	store      *store.Store
 	scheduler  *core.Scheduler
+	mcpServer  *clicrontabmcp.MCPServer
 	logger     *slog.Logger
 	location   *time.Location
+	authToken  string
 }
 
 // NewServer constructs the HTTP API server.
-func NewServer(addr string, store *store.Store, scheduler *core.Scheduler, logger *slog.Logger, location *time.Location) (*Server, error) {
+func NewServer(addr string, authToken string, store *store.Store, scheduler *core.Scheduler, mcpServer *clicrontabmcp.MCPServer, logger *slog.Logger, location *time.Location) (*Server, error) {
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
 	router.Use(middleware.RealIP)
@@ -40,8 +43,10 @@ func NewServer(addr string, store *store.Store, scheduler *core.Scheduler, logge
 		router:    router,
 		store:     store,
 		scheduler: scheduler,
+		mcpServer: mcpServer,
 		logger:    logger,
 		location:  location,
+		authToken: authToken,
 	}
 	s.registerRoutes(staticFS)
 
@@ -72,6 +77,13 @@ func (s *Server) registerRoutes(staticFS fs.FS) {
 
 	s.router.Get("/", s.handleIndex(staticFS))
 	s.router.Handle("/assets/*", fileServer)
+
+	// Mount MCP endpoint with optional authentication
+	var mcpHandler http.Handler = s.mcpServer
+	if s.authToken != "" {
+		mcpHandler = AuthMiddleware(s.authToken)(mcpHandler)
+	}
+	s.router.Handle("/mcp", mcpHandler)
 
 	s.router.Route("/v1", func(r chi.Router) {
 		r.Post("/cron/preview", s.handleCronPreview)

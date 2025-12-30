@@ -25,7 +25,10 @@ go build ./cmd/clicrontabd
 go run cmd/clicrontabd/main.go
 
 # 使用自定义选项运行
-./clicrontabd --addr 127.0.0.1:7070 --state-dir ~/.local/state/clicrontab --log-level info
+./clicrontabd --addr 0.0.0.0:8080 --state-dir ~/.local/state/clicrontab --log-level info
+
+# 或者使用环境变量
+CLICRON_ADDR=0.0.0.0:8080 CLICRON_LOG_LEVEL=debug ./clicrontabd
 
 # 安装依赖项
 go mod download

@@ -35,3 +35,7 @@ go.work
 
 # 状态目录（如果使用默认位置）
 ~/.local/state/clicrontab/
+
+# 配置文件
+config.yaml
+.env

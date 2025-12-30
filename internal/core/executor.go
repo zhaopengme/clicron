@@ -13,19 +13,23 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"clicrontab/internal/notify"
 )
 
 // CommandExecutor executes task commands and records their results.
 type CommandExecutor struct {
-	store  Store
-	logger *slog.Logger
+	store    Store
+	logger   *slog.Logger
+	notifier notify.Notifier
 }
 
 // NewCommandExecutor creates a new executor.
-func NewCommandExecutor(store Store, logger *slog.Logger) *CommandExecutor {
+func NewCommandExecutor(store Store, logger *slog.Logger, notifier notify.Notifier) *CommandExecutor {
 	return &CommandExecutor{
-		store:  store,
-		logger: logger,
+		store:    store,
+		logger:   logger,
+		notifier: notifier,
 	}
 }
 
@@ -174,6 +178,41 @@ func (e *CommandExecutor) Execute(ctx context.Context, task *Task, run *Run) err
 	if err := e.store.MarkRunCompleted(ctx, run.ID, status, endedAt, exitCode, errMsg); err != nil {
 		return fmt.Errorf("mark run completed: %w", err)
 	}
+
+	if e.notifier != nil {
+		taskName := task.ID
+		if task.Name != nil {
+			taskName = *task.Name
+		}
+
+		title := fmt.Sprintf("[%s] Task Finished", taskName)
+		body := fmt.Sprintf("Status: %s\nRun ID: %s", status, run.ID)
+		if exitCode != nil {
+			body += fmt.Sprintf("\nExit Code: %d", *exitCode)
+		}
+		if errMsg != nil {
+			body += fmt.Sprintf("\nError: %s", *errMsg)
+		}
+
+		// Append output tail
+		output := outputTail.String()
+		if len(output) > 0 {
+			const maxLen = 500
+			if len(output) > maxLen {
+				output = "..." + output[len(output)-maxLen:]
+			}
+			body += fmt.Sprintf("\n\nOutput:\n%s", output)
+		}
+
+		// Use a detached context for notification
+		notifyCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := e.notifier.Send(notifyCtx, title, body); err != nil {
+			e.logger.Error("failed to send notification", "err", err)
+		}
+	}
+
 	return nil
 }
 

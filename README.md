@@ -235,12 +235,41 @@ queued → running → succeeded/failed/timed_out/canceled
 
 ## 配置选项
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `--addr` | 127.0.0.1:7070 | 监听地址 |
-| `--state-dir` | ~/.local/state/clicrontab | 数据目录 |
-| `--log-level` | info | 日志级别 (debug/info/warn/error) |
-| `--use-utc` | false | 使用 UTC 时区 |
+### 环境变量
+
+| 环境变量 | 默认值 | 说明 |
+|---------|--------|------|
+| `CLICRON_ADDR` | 0.0.0.0:7070 | 监听地址 |
+| `CLICRON_AUTH_TOKEN` | (空) | API 认证令牌 |
+| `CLICRON_LOG_LEVEL` | info | 日志级别 (debug/info/warn/error) |
+| `CLICRON_LOG_RETENTION` | 20 | 每个任务保留的运行记录数 |
+| `CLICRON_STATE_DIR` | ~/.config/clicrontab | 数据目录 |
+| `CLICRON_USE_UTC` | false | 使用 UTC 时区 |
+| `CLICRON_SHUTDOWN_GRACE` | 5s | 关闭等待时间 |
+| `CLICRON_BARK_URL` | (空) | Bark 通知 URL |
+| `CLICRON_BARK_ENABLED` | false | 启用 Bark 通知 |
+
+### 命令行参数
+
+命令行参数优先级高于环境变量：
+
+| 参数 | 说明 |
+|------|------|
+| `--addr` | 监听地址 |
+| `--state-dir` | 数据目录 |
+| `--log-level` | 日志级别 |
+| `--use-utc` | 使用 UTC 时区 |
+| `--run-log-keep` | 保留运行记录数 |
+| `--shutdown-grace` | 关闭等待时间 |
+
+### .env 文件
+
+可以创建 `.env` 文件来配置环境变量，参考 `.env.example`：
+
+```bash
+cp .env.example .env
+# 编辑 .env 文件
+```
 
 ## 数据目录结构
 
