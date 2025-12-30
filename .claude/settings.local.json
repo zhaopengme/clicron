@@ -14,7 +14,8 @@
       "Skill(superpowers:using-superpowers)",
       "mcp__clicron__cron_create_task",
       "mcp__clicron__cron_delete_task",
-      "WebSearch"
+      "WebSearch",
+      "mcp__ai-memory__get_memories"
     ]
   },
   "spinnerTipsEnabled": false
