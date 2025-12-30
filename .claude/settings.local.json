@@ -15,7 +15,8 @@
       "mcp__clicron__cron_create_task",
       "mcp__clicron__cron_delete_task",
       "WebSearch",
-      "mcp__ai-memory__get_memories"
+      "mcp__ai-memory__get_memories",
+      "Bash(chmod:*)"
     ]
   },
   "spinnerTipsEnabled": false

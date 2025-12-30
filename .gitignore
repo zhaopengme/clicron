@@ -39,3 +39,7 @@ go.work
 # 配置文件
 config.yaml
 .env
+
+# 运行脚本生成文件
+.clicrontabd.pid
+clicrontabd.log
