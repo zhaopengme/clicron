@@ -1,7 +1,95 @@
 const state = {
   tasks: [],
   polling: null,
+  isAuthenticated: false,
 };
+
+// Token management
+const getAuthToken = () => {
+  return sessionStorage.getItem('clicron_token');
+};
+
+const setAuthToken = (token) => {
+  sessionStorage.setItem('clicron_token', token);
+};
+
+const clearAuthToken = () => {
+  sessionStorage.removeItem('clicron_token');
+};
+
+// Wrapper for fetch that adds authentication
+async function apiFetch(url, options = {}) {
+  const token = getAuthToken();
+  const headers = options.headers || {};
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  return fetch(url, { ...options, headers });
+}
+
+// Authentication
+async function checkAuth() {
+  const token = getAuthToken();
+  if (!token) {
+    showAuthModal();
+    return false;
+  }
+
+  try {
+    const resp = await apiFetch('/v1/tasks');
+    if (resp.status === 401) {
+      clearAuthToken();
+      showAuthModal();
+      return false;
+    }
+    state.isAuthenticated = true;
+    hideAuthModal();
+    initializeApp();  // Initialize on successful auth
+    return true;
+  } catch (err) {
+    console.error(err);
+    showAuthModal();
+    return false;
+  }
+}
+
+function showAuthModal() {
+  const authModal = document.getElementById('auth-modal');
+  const backdrop = document.getElementById('modal-backdrop');
+  backdrop.classList.remove('hidden');
+  authModal.classList.remove('hidden');
+}
+
+function hideAuthModal() {
+  const authModal = document.getElementById('auth-modal');
+  const backdrop = document.getElementById('modal-backdrop');
+  authModal.classList.add('hidden');
+  if (!taskModal.classList.contains('hidden') || !logModal.classList.contains('hidden')) {
+    return;
+  }
+  backdrop.classList.add('hidden');
+}
+
+async function handleLogin(token) {
+  setAuthToken(token);
+  const success = await checkAuth();  // checkAuth will call initializeApp
+  if (!success) {
+    const errorDiv = document.getElementById('auth-error');
+    errorDiv.textContent = 'Invalid token';
+    errorDiv.classList.remove('hidden');
+  }
+}
+
+function initializeApp() {
+  // Clear existing polling to avoid duplicates
+  if (state.polling) {
+    clearInterval(state.polling);
+  }
+  loadTasks();
+  state.polling = setInterval(loadTasks, 5000);
+}
 
 const backdrop = document.getElementById('modal-backdrop');
 const taskModal = document.getElementById('task-modal');
@@ -10,14 +98,28 @@ const logModal = document.getElementById('log-modal');
 document.getElementById('refresh-btn').addEventListener('click', () => loadTasks());
 document.getElementById('new-task-btn').addEventListener('click', () => openTaskForm());
 
-backdrop.addEventListener('click', closeModals);
+backdrop.addEventListener('click', () => {
+  closeModals();
+  if (state.isAuthenticated) {
+    hideAuthModal();
+  }
+});
 
-loadTasks();
-state.polling = setInterval(loadTasks, 5000);
+// Auth form handler
+document.getElementById('auth-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const tokenInput = document.getElementById('auth-token-input');
+  const errorDiv = document.getElementById('auth-error');
+  errorDiv.classList.add('hidden');
+  await handleLogin(tokenInput.value.trim());
+});
+
+// Check auth on load
+checkAuth();
 
 async function loadTasks() {
   try {
-    const resp = await fetch('/v1/tasks');
+    const resp = await apiFetch('/v1/tasks');
     if (!resp.ok) throw new Error('Unable to load tasks');
     state.tasks = await resp.json();
     renderTasks();
@@ -97,7 +199,7 @@ function openTaskForm(task = null) {
       return;
     }
     try {
-      const resp = await fetch('/v1/cron/preview', {
+      const resp = await apiFetch('/v1/cron/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ expr }),
@@ -136,7 +238,7 @@ function openTaskForm(task = null) {
     try {
       const url = isEdit ? `/v1/tasks/${task.id}` : '/v1/tasks';
       const method = isEdit ? 'PATCH' : 'POST';
-      const resp = await fetch(url, {
+      const resp = await apiFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -160,7 +262,7 @@ function openTaskForm(task = null) {
 
 async function runTask(taskID) {
   try {
-    const resp = await fetch(`/v1/tasks/${taskID}/run`, { method: 'POST' });
+    const resp = await apiFetch(`/v1/tasks/${taskID}/run`, { method: 'POST' });
     if (resp.status === 409) {
       alert('Task is already running');
       return;
@@ -175,7 +277,7 @@ async function runTask(taskID) {
 async function toggleTask(task) {
   try {
     const payload = { paused: task.status !== 'paused' };
-    const resp = await fetch(`/v1/tasks/${task.id}`, {
+    const resp = await apiFetch(`/v1/tasks/${task.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -190,7 +292,7 @@ async function toggleTask(task) {
 async function deleteTask(taskID) {
   if (!confirm('Delete this task? This keeps run history.')) return;
   try {
-    const resp = await fetch(`/v1/tasks/${taskID}`, { method: 'DELETE' });
+    const resp = await apiFetch(`/v1/tasks/${taskID}`, { method: 'DELETE' });
     if (!resp.ok) throw new Error('Failed to delete task');
     await loadTasks();
   } catch (err) {
@@ -200,7 +302,7 @@ async function deleteTask(taskID) {
 
 async function openRunsModal(task) {
   try {
-    const resp = await fetch(`/v1/tasks/${task.id}/runs?limit=20`);
+    const resp = await apiFetch(`/v1/tasks/${task.id}/runs?limit=20`);
     if (!resp.ok) throw new Error('Failed to load runs');
     const runs = await resp.json();
 
@@ -248,7 +350,7 @@ async function openRunsModal(task) {
 
 async function openLogViewer(runID) {
   try {
-    const resp = await fetch(`/v1/runs/${runID}/log?tail=200`);
+    const resp = await apiFetch(`/v1/runs/${runID}/log?tail=200`);
     if (!resp.ok) throw new Error('Failed to load log');
     const text = await resp.text();
     logModal.innerHTML = '';

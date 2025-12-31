@@ -37,6 +37,19 @@
   <div id="modal-backdrop" class="hidden"></div>
   <div id="task-modal" class="modal hidden"></div>
   <div id="log-modal" class="modal hidden"></div>
+  <div id="auth-modal" class="modal hidden">
+    <div class="auth-container">
+      <h2>Authentication Required</h2>
+      <form id="auth-form">
+        <label>Token</label>
+        <input type="password" id="auth-token-input" placeholder="Enter your access token" required>
+        <div id="auth-error" class="error-message hidden"></div>
+        <div class="form-actions">
+          <button type="submit">Login</button>
+        </div>
+      </form>
+    </div>
+  </div>
   <script src="/assets/app.js" type="module"></script>
 </body>
 </html>

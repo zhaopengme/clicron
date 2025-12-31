@@ -16,7 +16,9 @@
       "mcp__clicron__cron_delete_task",
       "WebSearch",
       "mcp__ai-memory__get_memories",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "mcp__clicron__cron_list_runs",
+      "mcp__clicron__cron_get_run_log"
     ]
   },
   "spinnerTipsEnabled": false

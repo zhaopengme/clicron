@@ -86,6 +86,11 @@ func (s *Server) registerRoutes(staticFS fs.FS) {
 	s.router.Handle("/mcp", mcpHandler)
 
 	s.router.Route("/v1", func(r chi.Router) {
+		// Apply authentication to all API endpoints
+		if s.authToken != "" {
+			r.Use(AuthMiddleware(s.authToken))
+		}
+
 		r.Post("/cron/preview", s.handleCronPreview)
 
 		r.Route("/tasks", func(r chi.Router) {

@@ -163,3 +163,26 @@ textarea {
   overflow-y: auto;
   white-space: pre-wrap;
 }
+
+/* Auth Modal */
+#auth-modal {
+  min-width: 360px;
+}
+
+.auth-container h2 {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+.auth-container input[type="password"] {
+  padding: 12px;
+  font-size: 1rem;
+}
+
+.error-message {
+  padding: 8px 12px;
+  background: #fef2f2;
+  color: #dc2626;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
